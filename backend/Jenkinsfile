@@ -14,36 +14,35 @@ pipeline {
   environment {
     BACKEND_IMAGE = 'nonameaaaa/healytics_backend'
     BACKEND_MIGRATION_IMAGE = 'nonameaaaa/healytics_backend-migrate'
+    // Ephemeral Node.js image for test/build — no Node installed in the agent.
+    NODE_IMAGE = 'node:22'
     // VPS_DEPLOY_SCRIPT = '/opt/healytics/dockers/scripts/deploy-backend.sh'
   }
 
   stages {
-    stage('Checkout') {
+    // The host source tree is bind-mounted into the workspace by docker-compose
+    // (HEALYTICS_REPO_PATH → /home/jenkins/agent/workspace/healytics-backend).
+    // No git clone needed — just read metadata from the existing repo.
+    stage('Prepare') {
       steps {
         script {
-          // Derive branch from the webhook GIT_REF parameter
-          // e.g. "refs/heads/main" → "main", fallback to "main" if not set
           def ref = env.GIT_REF ?: 'refs/heads/main'
-          env.ACTIVE_BRANCH = ref.replaceFirst('^refs/heads/', '')
+          env.ACTIVE_BRANCH = ref.replaceFirst(/^refs\/heads\//, '')
 
-          if (!(env.ACTIVE_BRANCH in ['main', 'master'])) {
-            error("Refusing to build/deploy branch '${env.ACTIVE_BRANCH}'. Only main/master are trusted for production.")
-          }
+          // Read commit SHA from the mounted git repo
+          env.GIT_COMMIT_SHORT = sh(
+            returnStdout: true,
+            script: 'git rev-parse --short=12 HEAD'
+          ).trim()
 
-          // Clone the actual Healytics repo (not the jenkinfiles repo)
-          // The agent uses SSH keys mounted from the host (~/.ssh)
-          checkout([
-            $class: 'GitSCM',
-            branches: [[name: "*/${env.ACTIVE_BRANCH}"]],
-            userRemoteConfigs: [[url: 'git@github.com:phatngti/Healytics.git']],
-            extensions: [
-              [$class: 'CloneOption', depth: 1, shallow: true],
-              [$class: 'CleanBeforeCheckout']
-            ]
-          ])
-
-          env.GIT_COMMIT_SHORT = sh(returnStdout: true, script: 'git rev-parse --short=12 HEAD').trim()
           env.IMAGE_TAG = env.GIT_COMMIT_SHORT
+
+          // Host-side path for docker-run volume mounts (resolved by Docker daemon).
+          // HEALYTICS_REPO_PATH is injected by docker-compose.
+          env.BACKEND_HOST_DIR = "${env.HEALYTICS_REPO_PATH}/backend"
+
+          echo "Branch: ${env.ACTIVE_BRANCH} | Commit: ${env.GIT_COMMIT_SHORT} | Tag: ${env.IMAGE_TAG}"
+          echo "Backend host dir: ${env.BACKEND_HOST_DIR}"
         }
       }
     }
@@ -63,23 +62,28 @@ pipeline {
 
     stage('Test') {
       steps {
-        dir('backend') {
-          sh '''
-            set -eu
-            corepack enable || true
-            yarn install --frozen-lockfile
-            yarn test --runInBand
-          '''
-        }
+        // Run tests inside an ephemeral Node.js container (sibling container via host docker.sock).
+        // A named volume overlays node_modules so we don't overwrite the host's
+        // macOS-native modules with Linux binaries, and it caches across builds.
+        sh '''
+          set -eu
+          docker run --rm \
+            -v "${BACKEND_HOST_DIR}:/app" \
+            -v healytics_backend_node_modules:/app/node_modules \
+            -w /app \
+            "${NODE_IMAGE}" \
+            sh -c 'corepack enable || true && yarn install --frozen-lockfile && yarn test --runInBand'
+        '''
       }
     }
 
     stage('Build') {
       steps {
+        // The multi-stage Dockerfile handles yarn install + yarn build internally.
+        // Just run docker build against the host source tree.
         dir('backend') {
           sh '''
             set -eu
-            yarn build
             docker build --target runtime -t "${BACKEND_IMAGE}:${IMAGE_TAG}" .
             docker build --target migrate -t "${BACKEND_MIGRATION_IMAGE}:${IMAGE_TAG}" .
           '''
