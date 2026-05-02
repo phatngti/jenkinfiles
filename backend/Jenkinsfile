@@ -8,9 +8,8 @@ pipeline {
     buildDiscarder(logRotator(numToKeepStr: '20'))
   }
 
-  triggers {
-    githubPush()
-  }
+  // Trigger: Generic Webhook Trigger (configured in casc.yml)
+  // GitHub push → Cloudflare Tunnel → Jenkins → injects GIT_REF
 
   environment {
     BACKEND_IMAGE = 'nonameaaaa/healytics_backend'
@@ -21,15 +20,30 @@ pipeline {
   stages {
     stage('Checkout') {
       steps {
-        checkout scm
         script {
-          env.ACTIVE_BRANCH = env.BRANCH_NAME ?: sh(returnStdout: true, script: 'git rev-parse --abbrev-ref HEAD').trim()
-          env.GIT_COMMIT_SHORT = sh(returnStdout: true, script: 'git rev-parse --short=12 HEAD').trim()
-          env.IMAGE_TAG = env.GIT_COMMIT_SHORT
+          // Derive branch from the webhook GIT_REF parameter
+          // e.g. "refs/heads/main" → "main", fallback to "main" if not set
+          def ref = env.GIT_REF ?: 'refs/heads/main'
+          env.ACTIVE_BRANCH = ref.replaceFirst('^refs/heads/', '')
 
           if (!(env.ACTIVE_BRANCH in ['main', 'master'])) {
             error("Refusing to build/deploy branch '${env.ACTIVE_BRANCH}'. Only main/master are trusted for production.")
           }
+
+          // Clone the actual Healytics repo (not the jenkinfiles repo)
+          // The agent uses SSH keys mounted from the host (~/.ssh)
+          checkout([
+            $class: 'GitSCM',
+            branches: [[name: "*/${env.ACTIVE_BRANCH}"]],
+            userRemoteConfigs: [[url: 'git@github.com:phatngti/Healytics.git']],
+            extensions: [
+              [$class: 'CloneOption', depth: 1, shallow: true],
+              [$class: 'CleanBeforeCheckout']
+            ]
+          ])
+
+          env.GIT_COMMIT_SHORT = sh(returnStdout: true, script: 'git rev-parse --short=12 HEAD').trim()
+          env.IMAGE_TAG = env.GIT_COMMIT_SHORT
         }
       }
     }
