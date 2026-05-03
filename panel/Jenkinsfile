@@ -48,18 +48,18 @@ pipeline {
       }
     }
 
-    // stage('Resolve Deploy Target') {
-    //   steps {
-    //     script {
-    //       env.VPS_SSH_HOST = sh(returnStdout: true, script: 'printf "%s" "${HEALYTICS_VPS_HOST:-}"').trim()
-    //       env.VPS_SSH_USER = sh(returnStdout: true, script: 'printf "%s" "${HEALYTICS_VPS_SSH_USER:-deploy}"').trim()
+    stage('Resolve Deploy Target') {
+      steps {
+        script {
+          env.VPS_SSH_HOST = sh(returnStdout: true, script: 'printf "%s" "${HEALYTICS_VPS_HOST:-}"').trim()
+          env.VPS_SSH_USER = sh(returnStdout: true, script: 'printf "%s" "${HEALYTICS_VPS_SSH_USER:-deploy}"').trim()
 
-    //       if (!env.VPS_SSH_HOST) {
-    //         error('Set HEALYTICS_VPS_HOST in the local Jenkins agent environment before deploying.')
-    //       }
-    //     }
-    //   }
-    // }
+          if (!env.VPS_SSH_HOST) {
+            error('Set HEALYTICS_VPS_HOST in the local Jenkins agent environment before deploying.')
+          }
+        }
+      }
+    }
 
     // stage('Test') {
     //   steps {
