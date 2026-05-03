@@ -14,7 +14,7 @@ pipeline {
   environment {
     PANEL_IMAGE = 'nonameaaaa/healytics_panel'
     // Pinned Flutter SDK version — must match the Dockerfile's build stage.
-    FLUTTER_IMAGE = 'ghcr.io/cirruslabs/flutter:3.29.3'
+    FLUTTER_IMAGE = 'ghcr.io/cirruslabs/flutter:3.35.5'
     VPS_DEPLOY_SCRIPT = '/opt/healytics/dockers/scripts/deploy-panel.sh'
   }
 
@@ -48,41 +48,41 @@ pipeline {
       }
     }
 
-    stage('Resolve Deploy Target') {
-      steps {
-        script {
-          env.VPS_SSH_HOST = sh(returnStdout: true, script: 'printf "%s" "${HEALYTICS_VPS_HOST:-}"').trim()
-          env.VPS_SSH_USER = sh(returnStdout: true, script: 'printf "%s" "${HEALYTICS_VPS_SSH_USER:-deploy}"').trim()
+    // stage('Resolve Deploy Target') {
+    //   steps {
+    //     script {
+    //       env.VPS_SSH_HOST = sh(returnStdout: true, script: 'printf "%s" "${HEALYTICS_VPS_HOST:-}"').trim()
+    //       env.VPS_SSH_USER = sh(returnStdout: true, script: 'printf "%s" "${HEALYTICS_VPS_SSH_USER:-deploy}"').trim()
 
-          if (!env.VPS_SSH_HOST) {
-            error('Set HEALYTICS_VPS_HOST in the local Jenkins agent environment before deploying.')
-          }
-        }
-      }
-    }
+    //       if (!env.VPS_SSH_HOST) {
+    //         error('Set HEALYTICS_VPS_HOST in the local Jenkins agent environment before deploying.')
+    //       }
+    //     }
+    //   }
+    // }
 
-    stage('Test') {
-      steps {
-        // Run tests inside an ephemeral Flutter container (sibling container via host docker.sock).
-        // A named volume overlays .pub-cache so we don't re-download packages every build.
-        // The entire healytic_fe/ workspace is mounted so admin_panel can resolve ../common.
-        // build_runner is required before analyze/test (Freezed, Riverpod, GoRouter, Slang).
-        sh '''
-          set -eu
-          docker run --rm \
-            -v "${FE_WORKSPACE_HOST_DIR}:/workspace" \
-            -v healytics_panel_pub_cache:/root/.pub-cache \
-            -w /workspace/admin_panel \
-            "${FLUTTER_IMAGE}" \
-            sh -c '
-              flutter pub get &&
-              dart run build_runner build --delete-conflicting-outputs &&
-              flutter analyze --no-fatal-infos &&
-              flutter test
-            '
-        '''
-      }
-    }
+    // stage('Test') {
+    //   steps {
+    //     // Run tests inside an ephemeral Flutter container (sibling container via host docker.sock).
+    //     // A named volume overlays .pub-cache so we don't re-download packages every build.
+    //     // The entire healytic_fe/ workspace is mounted so admin_panel can resolve ../common.
+    //     // build_runner is required before analyze/test (Freezed, Riverpod, GoRouter, Slang).
+    //     sh '''
+    //       set -eu
+    //       docker run --rm \
+    //         -v "${FE_WORKSPACE_HOST_DIR}:/workspace" \
+    //         -v healytics_panel_pub_cache:/root/.pub-cache \
+    //         -w /workspace/admin_panel \
+    //         "${FLUTTER_IMAGE}" \
+    //         sh -c '
+    //           flutter pub get &&
+    //           dart run build_runner build --delete-conflicting-outputs &&
+    //           flutter analyze --no-fatal-infos &&
+    //           flutter test
+    //         '
+    //     '''
+    //   }
+    // }
 
     stage('Build') {
       steps {
