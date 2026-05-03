@@ -103,7 +103,9 @@ pipeline {
       steps {
         sh '''
           set -eu
-          ssh -o BatchMode=yes "${VPS_SSH_USER}@${VPS_SSH_HOST}" \
+          ssh -o BatchMode=yes \
+              -o StrictHostKeyChecking=accept-new \
+              "${VPS_SSH_USER}@${VPS_SSH_HOST}" \
             "BACKEND_IMAGE='${BACKEND_IMAGE}' BACKEND_MIGRATION_IMAGE='${BACKEND_MIGRATION_IMAGE}' '${VPS_DEPLOY_SCRIPT}' '${IMAGE_TAG}'"
         '''
       }
