@@ -15,7 +15,7 @@ pipeline {
     PANEL_IMAGE = 'nonameaaaa/healytics_panel'
     // Pinned Flutter SDK version — must match the Dockerfile's build stage.
     FLUTTER_IMAGE = 'ghcr.io/cirruslabs/flutter:3.35.5'
-    VPS_DEPLOY_SCRIPT = '/opt/healytics/dockers/scripts/deploy-panel.sh'
+    VPS_DEPLOY_SCRIPT = '/root/dockers/scripts/deploy-panel.sh'
   }
 
   stages {
