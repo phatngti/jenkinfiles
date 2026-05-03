@@ -13,8 +13,8 @@ pipeline {
 
   environment {
     PANEL_IMAGE = 'nonameaaaa/healytics_panel'
-    // Ephemeral Flutter SDK image for test/build — no Flutter installed in the agent.
-    FLUTTER_IMAGE = 'ghcr.io/cirruslabs/flutter:stable'
+    // Pinned Flutter SDK version — must match the Dockerfile's build stage.
+    FLUTTER_IMAGE = 'ghcr.io/cirruslabs/flutter:3.29.3'
     VPS_DEPLOY_SCRIPT = '/opt/healytics/dockers/scripts/deploy-panel.sh'
   }
 
@@ -39,7 +39,7 @@ pipeline {
           // Host-side path for docker-run volume mounts (resolved by Docker daemon).
           // HEALYTICS_REPO_PATH is injected by docker-compose.
           // Mount the entire healytic_fe workspace so admin_panel can resolve
-          // its path dependency on ../common.
+          // its path dependency on ../common (Dart workspace layout).
           env.FE_WORKSPACE_HOST_DIR = "${env.HEALYTICS_REPO_PATH}/healytic_fe"
 
           echo "Branch: ${env.ACTIVE_BRANCH} | Commit: ${env.GIT_COMMIT_SHORT} | Tag: ${env.IMAGE_TAG}"
@@ -66,15 +66,17 @@ pipeline {
         // Run tests inside an ephemeral Flutter container (sibling container via host docker.sock).
         // A named volume overlays .pub-cache so we don't re-download packages every build.
         // The entire healytic_fe/ workspace is mounted so admin_panel can resolve ../common.
+        // build_runner is required before analyze/test (Freezed, Riverpod, GoRouter, Slang).
         sh '''
           set -eu
           docker run --rm \
-            -v "${FE_WORKSPACE_HOST_DIR}:/app" \
+            -v "${FE_WORKSPACE_HOST_DIR}:/workspace" \
             -v healytics_panel_pub_cache:/root/.pub-cache \
-            -w /app/admin_panel \
+            -w /workspace/admin_panel \
             "${FLUTTER_IMAGE}" \
             sh -c '
               flutter pub get &&
+              dart run build_runner build --delete-conflicting-outputs &&
               flutter analyze --no-fatal-infos &&
               flutter test
             '
@@ -84,54 +86,38 @@ pipeline {
 
     stage('Build') {
       steps {
-        // Step 1: Build Flutter web inside an ephemeral container.
-        // The build output lands on the host at healytic_fe/admin_panel/build/web/.
-        sh '''
-          set -eu
-          docker run --rm \
-            -v "${FE_WORKSPACE_HOST_DIR}:/app" \
-            -v healytics_panel_pub_cache:/root/.pub-cache \
-            -w /app/admin_panel \
-            "${FLUTTER_IMAGE}" \
-            sh -c '
-              flutter pub get &&
-              flutter build web --release --wasm --dart-define=ENV=prod --base-href /
-            '
-        '''
-
-        // Step 2: Package the pre-built web assets into an Nginx Docker image.
-        // Uses the multi-stage Dockerfile at healytic_fe/admin_panel/Dockerfile
-        // (only the 'runtime' stage — the Flutter build already happened above).
-        dir('healytic_fe') {
-          sh '''
-            set -eu
-            docker build \
-              -f admin_panel/Dockerfile \
-              --target runtime \
-              -t "${PANEL_IMAGE}:${IMAGE_TAG}" \
-              .
-          '''
+        // Build and package the admin panel using the project's docker-build.sh script.
+        // The script:
+        //   1. Ensures a buildx builder with linux/amd64 support exists
+        //   2. Builds the image using the multi-stage Dockerfile
+        //      (Flutter build + Nginx runtime) with healytic_fe/ as context
+        //   3. Loads the image into the local Docker daemon
+        dir('healytic_fe/admin_panel') {
+          sh "bash scripts/docker-build.sh ${IMAGE_TAG} ${PANEL_IMAGE}"
         }
       }
     }
 
     stage('Push') {
       steps {
-        // Reuse the same docker-push.sh pattern as the backend pipeline.
+        // Use the admin panel's own docker-push.sh script.
         // The script loads Docker Hub credentials from .env and pushes the image.
         dir('healytic_fe/admin_panel') {
-          sh "../../backend/scripts/docker-push.sh ${IMAGE_TAG} ${PANEL_IMAGE}"
+          sh "bash scripts/docker-push.sh ${IMAGE_TAG} ${PANEL_IMAGE}"
         }
       }
     }
 
     stage('Deploy VPS') {
       steps {
-        sh '''
+        sh """
           set -eu
-          ssh -o BatchMode=yes "${VPS_SSH_USER}@${VPS_SSH_HOST}" \
-            "PANEL_IMAGE='${PANEL_IMAGE}' '${VPS_DEPLOY_SCRIPT}' '${IMAGE_TAG}'"
-        '''
+          ssh -o BatchMode=yes \
+              -o StrictHostKeyChecking=accept-new \
+              -o ConnectTimeout=10 \
+              ${VPS_SSH_USER}@${VPS_SSH_HOST} \
+              'PANEL_IMAGE=${PANEL_IMAGE} ${VPS_DEPLOY_SCRIPT} ${IMAGE_TAG}'
+        """
       }
     }
   }
