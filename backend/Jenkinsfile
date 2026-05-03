@@ -16,7 +16,7 @@ pipeline {
     BACKEND_MIGRATION_IMAGE = 'nonameaaaa/healytics_backend-migrate'
     // Ephemeral Node.js image for test/build — no Node installed in the agent.
     NODE_IMAGE = 'node:22'
-    // VPS_DEPLOY_SCRIPT = '/opt/healytics/dockers/scripts/deploy-backend.sh'
+    VPS_DEPLOY_SCRIPT = '/opt/healytics/dockers/scripts/deploy-backend.sh'
   }
 
   stages {
@@ -47,18 +47,18 @@ pipeline {
       }
     }
 
-    // stage('Resolve Deploy Target') {
-    //   steps {
-    //     script {
-    //       env.VPS_SSH_HOST = sh(returnStdout: true, script: 'printf "%s" "${HEALYTICS_VPS_HOST:-}"').trim()
-    //       env.VPS_SSH_USER = sh(returnStdout: true, script: 'printf "%s" "${HEALYTICS_VPS_SSH_USER:-deploy}"').trim()
+    stage('Resolve Deploy Target') {
+      steps {
+        script {
+          env.VPS_SSH_HOST = sh(returnStdout: true, script: 'printf "%s" "${HEALYTICS_VPS_HOST:-}"').trim()
+          env.VPS_SSH_USER = sh(returnStdout: true, script: 'printf "%s" "${HEALYTICS_VPS_SSH_USER:-deploy}"').trim()
 
-    //       if (!env.VPS_SSH_HOST) {
-    //         error('Set HEALYTICS_VPS_HOST in the local Jenkins agent environment before deploying.')
-    //       }
-    //     }
-    //   }
-    // }
+          if (!env.VPS_SSH_HOST) {
+            error('Set HEALYTICS_VPS_HOST in the local Jenkins agent environment before deploying.')
+          }
+        }
+      }
+    }
 
     stage('Test') {
       steps {
@@ -99,15 +99,15 @@ pipeline {
       }
     }
 
-    // stage('Deploy VPS') {
-    //   steps {
-    //     sh '''
-    //       set -eu
-    //       ssh -o BatchMode=yes "${VPS_SSH_USER}@${VPS_SSH_HOST}" \
-    //         "BACKEND_IMAGE='${BACKEND_IMAGE}' BACKEND_MIGRATION_IMAGE='${BACKEND_MIGRATION_IMAGE}' '${VPS_DEPLOY_SCRIPT}' '${IMAGE_TAG}'"
-    //     '''
-    //   }
-    // }
+    stage('Deploy VPS') {
+      steps {
+        sh '''
+          set -eu
+          ssh -o BatchMode=yes "${VPS_SSH_USER}@${VPS_SSH_HOST}" \
+            "BACKEND_IMAGE='${BACKEND_IMAGE}' BACKEND_MIGRATION_IMAGE='${BACKEND_MIGRATION_IMAGE}' '${VPS_DEPLOY_SCRIPT}' '${IMAGE_TAG}'"
+        '''
+      }
+    }
   }
 
   post {
