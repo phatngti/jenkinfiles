@@ -81,13 +81,10 @@ pipeline {
     stage('Build') {
       steps {
         // The multi-stage Dockerfile handles yarn install + yarn build internally.
-        // Just run docker build against the host source tree.
+        // docker-build.sh sets up buildx for linux/amd64 cross-compilation.
         dir('backend') {
-          sh '''
-            set -eu
-            docker build --target runtime -t "${BACKEND_IMAGE}:${IMAGE_TAG}" .
-            docker build --target migrate -t "${BACKEND_MIGRATION_IMAGE}:${IMAGE_TAG}" .
-          '''
+          sh "scripts/docker-build.sh ${IMAGE_TAG} ${BACKEND_IMAGE} --target runtime"
+          sh "scripts/docker-build.sh ${IMAGE_TAG} ${BACKEND_MIGRATION_IMAGE} --target migrate"
         }
       }
     }
